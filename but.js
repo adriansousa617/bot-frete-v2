@@ -19,7 +19,7 @@ async function iniciarBot() {
 
     if (!sock.authState.creds.registered) {
         // COLOQUE SEU NÚMERO AQUI (Ex: 5561998853299)
-        const meuNumero = "5561999999999"; 
+        const meuNumero = "5561998853299"; 
 
         // Espera 15 segundos para o servidor estabilizar antes de pedir o código
         setTimeout(async () => {
