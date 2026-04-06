@@ -62,4 +62,21 @@ async function iniciarBot() {
 
         // Verifica se tem o local E as palavras chave (disponível ou frete)
         const temLocal = locais.some(l => textoRaw.includes(l));
-        const tem
+        const temPalavraChave = textoRaw.includes("disponivel") || textoRaw.includes("frete");
+
+        if (temLocal && temPalavraChave) {
+            try {
+                // Reage com um joinha 👍
+                await sock.sendMessage(msg.key.remoteJid, { 
+                    react: { text: "👍", key: msg.key } 
+                });
+                console.log(`\n✅ REAGIDO COM SUCESSO: "${textoRaw.substring(0, 30)}..."`);
+            } catch (err) {
+                console.log("❌ Erro ao reagir:", err.message);
+            }
+        }
+    });
+}
+
+// Inicia o processo
+iniciarBot().catch(err => console.log("Erro crítico:", err));
