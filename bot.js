@@ -4,15 +4,15 @@ const qrcode = require('qrcode-terminal');
 
 async function iniciarBot() {
     const { version } = await fetchLatestBaileysVersion();
+    // A pasta 'auth_resultado' salva sua conexão na nuvem
     const { state, saveCreds } = await useMultiFileAuthState('auth_resultado');
 
     const sock = makeWASocket({
         version,
         auth: state,
-        logger: pino({ level: 'fatal' }),
-        printQRInTerminal: true,
-        browser: ["Windows", "Chrome", "11.0"],
-        syncFullHistory: false,
+        logger: pino({ level: 'error' }), // Limpa o excesso de letras na tela
+        printQRInTerminal: true, // Força o QR Code a aparecer nos Logs
+        browser: ["Ubuntu", "Chrome", "20.0.04"],
         markOnlineOnConnect: true
     });
 
@@ -20,15 +20,24 @@ async function iniciarBot() {
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
+        
         if (qr) {
             console.clear();
-            console.log("📲 ESCANEIE O QR CODE NO LOG DO RAILWAY:");
+            console.log("------------------------------------------");
+            console.log("📲 ESCANEIE O QR CODE ABAIXO NO RAILWAY:");
+            console.log("------------------------------------------");
             qrcode.generate(qr, { small: true });
         }
-        if (connection === 'open') console.log('\n🚀 BOT DE FRETE ONLINE NA NUVEM!');
+
+        if (connection === 'open') {
+            console.log('\n🚀 BOT DE FRETE ONLINE E VIGIANDO OS GRUPOS!');
+            const seuNumero = sock.user.id.split(':')[0] + "@s.whatsapp.net";
+            sock.sendMessage(seuNumero, { text: "✅ *O Pescador de Fretes está Online na Nuvem!*" });
+        }
+
         if (connection === 'close') {
-            const motivo = (lastDisconnect.error)?.output?.statusCode;
-            if (motivo !== DisconnectReason.loggedOut) iniciarBot();
+            const deveReiniciar = (lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut;
+            if (deveReiniciar) iniciarBot();
         }
     });
 
@@ -37,21 +46,8 @@ async function iniciarBot() {
         if (!msg.message || msg.key.fromMe) return;
 
         const textoRaw = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
+        // Remove acentos e deixa tudo minúsculo para não falhar
         const textoLimpo = textoRaw.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-        const locais = ["aguas claras", "joquei", "smas-spo", "candangolandia", "lucio costa", "guara 1", "smu", "sobradinho", "smas-sofs"];
-        
-        if (locais.some(l => textoLimpo.includes(l)) && textoLimpo.includes("disponivel")) {
-            try {
-                // Reação Dupla para Garantia
-                await sock.sendMessage(msg.key.remoteJid, { react: { text: "👍", key: msg.key } });
-                
-                const seuNumero = sock.user.id.split(':')[0] + "@s.whatsapp.net";
-                await sock.sendMessage(seuNumero, { text: `✅ *REAGIDO NO GRUPO!* \n📍 Local: ${textoRaw}` });
-                console.log(`✅ REAGIDO: ${textoRaw}`);
-            } catch (err) { console.log(`❌ ERRO: ${err.message}`); }
-        }
-    });
-}
-
-iniciarBot().catch(err => console.log("Erro:", err));
+        // Cidades que você quer monitorar
+        const locais = ["sobradinho", "smu", "gu
