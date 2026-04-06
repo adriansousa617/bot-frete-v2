@@ -1,59 +1,65 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const pino = require('pino');
+const qrcode = require('qrcode-terminal');
 
 async function iniciarBot() {
     const { version } = await fetchLatestBaileysVersion();
-    // Mudamos o nome da pasta para forçar uma conexão limpa
-    const { state, saveCreds } = await useMultiFileAuthState('sessao_v3');
+    
+    // ATENÇÃO: O '.' indica que o bot vai ler os arquivos que você subiu na raiz do GitHub
+    const { state, saveCreds } = await useMultiFileAuthState('.');
 
     const sock = makeWASocket({
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        printQRInTerminal: false,
-        // Isso ajuda o WhatsApp a aceitar a conexão da nuvem
+        printQRInTerminal: false, // Usamos o qrcode-terminal para desenhar melhor
         browser: ["Ubuntu", "Chrome", "20.0.04"]
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    if (!sock.authState.creds.registered) {
-        // COLOQUE SEU NÚMERO AQUI (Ex: 5561998853299)
-      const meuNumero = "556198853299";
-
-        // Espera 15 segundos para o servidor estabilizar antes de pedir o código
-        setTimeout(async () => {
-            try {
-                const code = await sock.requestPairingCode(meuNumero);
-                console.log(`\n✅ DIGITE ESTE CÓDIGO NO WHATSAPP: ${code}\n`);
-            } catch (err) {
-                console.log("Aguardando estabilidade...");
-            }
-        }, 15000);
-    }
-
     sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
-        if (connection === 'open') {
-            console.log('\n🚀 CONECTADO COM SUCESSO! O BOT ESTÁ ATIVO.');
+        const { connection, lastDisconnect, qr } = update;
+
+        if (qr) {
+            console.log("\n📢 NOVO QR CODE GERADO (Caso precise reconectar):");
+            qrcode.generate(qr, { small: true });
         }
+
+        if (connection === 'open') {
+            console.log('\n✅ [SISTEMA] BOT CONECTADO E ATIVO NO RAILWAY!');
+        }
+
         if (connection === 'close') {
             const motivo = (lastDisconnect.error)?.output?.statusCode;
-            if (motivo !== DisconnectReason.loggedOut) iniciarBot();
+            if (motivo !== DisconnectReason.loggedOut) {
+                console.log("🔄 Conexão oscilou, tentando religar...");
+                iniciarBot();
+            } else {
+                console.log("❌ Você saiu da sessão no celular. Precisa logar de novo.");
+            }
         }
     });
 
+    // --- LÓGICA DE MONITORAMENTO DE FRETES ---
     sock.ev.on('messages.upsert', async m => {
         const msg = m.messages[0];
         if (!msg.message || msg.key.fromMe) return;
-        const textoRaw = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").toLowerCase();
-        const locais = ["aguas claras", "joquei", "smas-spo", "candangolandia", "lucio costa", "guara 1", "smu", "sobradinho", "smas-sofs", "guara 2"];
-        if (locais.some(l => textoRaw.includes(l)) && (textoRaw.includes("disponivel") || textoRaw.includes("frete"))) {
-            try {
-                await sock.sendMessage(msg.key.remoteJid, { react: { text: "👍", key: msg.key } });
-            } catch (e) { console.log("Erro na reação"); }
-        }
-    });
-}
 
-iniciarBot().catch(err => console.log(err));
+        // Captura o texto da mensagem (conversa direta ou resposta/legenda)
+        const textoRaw = (
+            msg.message.conversation || 
+            msg.message.extendedTextMessage?.text || 
+            msg.message.imageMessage?.caption || ""
+        ).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // Remove acentos
+
+        // Lista de locais monitorados
+        const locais = [
+            "aguas claras", "joquei", "smas-spo", "candangolandia", 
+            "lucio costa", "guara 1", "smu", "sobradinho", 
+            "smas-sofs", "guara 2"
+        ];
+
+        // Verifica se tem o local E as palavras chave (disponível ou frete)
+        const temLocal = locais.some(l => textoRaw.includes(l));
+        const tem
