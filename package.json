@@ -1,0 +1,11 @@
+{
+  "name": "bot-frete-nuvem",
+  "version": "1.0.0",
+  "main": "but.js",
+  "scripts": { "start": "node but.js" },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.5.0",
+    "pino": "^8.16.1",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
