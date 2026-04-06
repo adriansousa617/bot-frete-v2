@@ -1,6 +1,5 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const pino = require('pino');
-const qrcode = require('qrcode-terminal');
 
 async function iniciarBot() {
     const { version } = await fetchLatestBaileysVersion();
@@ -9,59 +8,48 @@ async function iniciarBot() {
     const sock = makeWASocket({
         version,
         auth: state,
-        logger: pino({ level: 'silent' }), // Silencia erros bobos pra limpar o log
-        printQRInTerminal: true, // Força o QR Code a aparecer nos logs
-        browser: ["Ubuntu", "Chrome", "20.0.04"],
-        syncFullHistory: false
+        logger: pino({ level: 'silent' }),
+        printQRInTerminal: false, // Desligamos o QR Code ruim
+        browser: ["Ubuntu", "Chrome", "20.0.04"]
     });
+
+    // --- CONFIGURAÇÃO DO CÓDIGO DE EMPARELHAMENTO ---
+    if (!sock.authState.creds.registered) {
+        // COLOQUE SEU NÚMERO ABAIXO (Exemplo: 5561998853299)
+        const meuNumero = "5561999999999"; 
+        
+        setTimeout(async () => {
+            const code = await sock.requestPairingCode(meuNumero);
+            console.log(`\n✅ SEU CÓDIGO DE ACESSO É: ${code}\n`);
+        }, 5000);
+    }
+    // -----------------------------------------------
 
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        
-        if (qr) {
-            console.log("\n⬇️--- ESCANEIE O QR CODE ABAIXO ---⬇️\n");
-            qrcode.generate(qr, { small: true });
-            console.log("\n⬆️--- ESCANEIE RÁPIDO ---⬆️\n");
-        }
-
-        if (connection === 'open') {
-            console.log('\n🚀 TUDO CERTO! BOT ONLINE NA NUVEM!');
-            const seuNumero = sock.user.id.split(':')[0] + "@s.whatsapp.net";
-            sock.sendMessage(seuNumero, { text: "✅ *O Pescador de Frete está Online!* Agora pode fechar o PC." });
-        }
-
+        const { connection, lastDisconnect } = update;
+        if (connection === 'open') console.log('\n🚀 BOT ONLINE E CONECTADO!');
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-            if (shouldReconnect) iniciarBot();
+            const motivo = (lastDisconnect.error)?.output?.statusCode;
+            if (motivo !== DisconnectReason.loggedOut) iniciarBot();
         }
     });
 
     sock.ev.on('messages.upsert', async m => {
         const msg = m.messages[0];
         if (!msg.message || msg.key.fromMe) return;
-
         const textoRaw = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
         const textoLimpo = textoRaw.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-
-        // Cidades que o bot vai vigiar
         const locais = ["aguas claras", "joquei", "smas-spo", "candangolandia", "lucio costa", "guara 1", "smu", "sobradinho", "smas-sofs", "guara 2"];
         
         if (locais.some(l => textoLimpo.includes(l)) && (textoLimpo.includes("disponivel") || textoLimpo.includes("frete"))) {
             try {
-                // Reage com Joinha no Grupo
                 await sock.sendMessage(msg.key.remoteJid, { react: { text: "👍", key: msg.key } });
-                
-                // Te avisa no privado que pegou um frete
-                const seuNumero = sock.user.id.split(':')[0] + "@s.whatsapp.net";
-                await sock.sendMessage(seuNumero, { text: `🎯 *FRETE DETECTADO!* \n📍 Local: ${textoRaw}` });
                 console.log(`✅ REAGIDO: ${textoRaw}`);
-            } catch (err) {
-                console.log(`❌ Erro ao reagir: ${err.message}`);
-            }
+            } catch (err) { console.log(`❌ Erro: ${err.message}`); }
         }
     });
 }
 
-iniciarBot().catch(err => console.log("Erro ao iniciar:", err));
+iniciarBot().catch(err => console.log(err));
