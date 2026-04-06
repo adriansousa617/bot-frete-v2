@@ -9,33 +9,48 @@ async function iniciarBot() {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        printQRInTerminal: false, // Desligamos o QR Code ruim
+        printQRInTerminal: false,
         browser: ["Ubuntu", "Chrome", "20.0.04"]
     });
 
-    // --- CONFIGURAÇÃO DO CÓDIGO DE EMPARELHAMENTO ---
-    if (!sock.authState.creds.registered) {
-        // COLOQUE SEU NÚMERO ABAIXO (Exemplo: 5561998853299)
-        const meuNumero = "5561999999999"; 
-        
-        setTimeout(async () => {
-            const code = await sock.requestPairingCode(meuNumero);
-            console.log(`\n✅ SEU CÓDIGO DE ACESSO É: ${code}\n`);
-        }, 5000);
-    }
-    // -----------------------------------------------
-
     sock.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('connection.update', (update) => {
+    sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
-        if (connection === 'open') console.log('\n🚀 BOT ONLINE E CONECTADO!');
+
+        // Se a conexão fechar por erro, ele tenta ligar de novo
         if (connection === 'close') {
             const motivo = (lastDisconnect.error)?.output?.statusCode;
-            if (motivo !== DisconnectReason.loggedOut) iniciarBot();
+            if (motivo !== DisconnectReason.loggedOut) {
+                console.log("🔄 Conexão oscilou, tentando ligar de novo...");
+                iniciarBot();
+            }
+        } 
+
+        // QUANDO A CONEXÃO ESTIVER PRONTA PARA PEDIR O CÓDIGO
+        if (connection === 'open') {
+            console.log('\n🚀 BOT ONLINE E CONECTADO!');
         }
     });
 
+    // --- PARTE DO CÓDIGO DE EMPARELHAMENTO MAIS SEGURO ---
+    if (!sock.authState.creds.registered) {
+        // COLOQUE SEU NÚMERO ABAIXO (Exemplo: 5561998853299)
+        const meuNumero = "5561999999999"; 
+
+        // Espera 10 segundos para garantir que o sinal está forte
+        setTimeout(async () => {
+            try {
+                const code = await sock.requestPairingCode(meuNumero);
+                console.log(`\n✅ SEU CÓDIGO DE ACESSO NOVO: ${code}\n`);
+            } catch (err) {
+                console.log("\n❌ Erro ao gerar código. Reiniciando para tentar de novo...");
+                iniciarBot();
+            }
+        }, 10000); 
+    }
+
+    // Lógica das mensagens (Joinha automático)
     sock.ev.on('messages.upsert', async m => {
         const msg = m.messages[0];
         if (!msg.message || msg.key.fromMe) return;
@@ -47,9 +62,9 @@ async function iniciarBot() {
             try {
                 await sock.sendMessage(msg.key.remoteJid, { react: { text: "👍", key: msg.key } });
                 console.log(`✅ REAGIDO: ${textoRaw}`);
-            } catch (err) { console.log(`❌ Erro: ${err.message}`); }
+            } catch (err) { console.log(`❌ Erro ao reagir: ${err.message}`); }
         }
     });
 }
 
-iniciarBot().catch(err => console.log(err));
+iniciarBot().catch(err => console.log("Erro crítico:", err));
