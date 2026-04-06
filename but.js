@@ -13,10 +13,11 @@ async function iniciarBot() {
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
         browser: ["Ubuntu", "Chrome", "20.0.04"],
-        // Adiciona um tempo maior de espera para evitar o erro 428
-        connectTimeoutMs: 60000,
-        defaultQueryTimeoutMs: 0,
-        keepAliveIntervalMs: 10000
+        // Aumentamos o tempo de espera para o servidor não desistir rápido
+        connectTimeoutMs: 120000, // 2 minutos
+        defaultQueryTimeoutMs: 120000,
+        keepAliveIntervalMs: 30000,
+        generateHighQualityLinkPreview: false
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -30,24 +31,25 @@ async function iniciarBot() {
         }
 
         if (connection === 'open') {
-            console.log('\n✅ [SISTEMA] BOT CONECTADO E ATIVO NO RAILWAY!');
+            console.log('\n✅ [SISTEMA] BOT CONECTADO E ATIVO!');
         }
 
         if (connection === 'close') {
-            const deveReconectar = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('🔄 Conexão fechada devido ao erro:', lastDisconnect.error, '- Tentando reconectar:', deveReconectar);
+            const codigoErro = (lastDisconnect.error instanceof Boom)?.output?.statusCode;
             
-            if (deveReconectar) {
-                // Espera 5 segundos antes de tentar ligar de novo para não travar o Railway
+            // Se o erro for timeout (408) ou conexão fechada (428), a gente religa rápido
+            if (codigoErro !== DisconnectReason.loggedOut) {
+                console.log(`🔄 Conexão instável (Erro ${codigoErro}). Reiniciando em 5s...`);
                 setTimeout(() => iniciarBot(), 5000);
+            } else {
+                console.log("❌ Sessão encerrada. Apague os arquivos de sessão e logue de novo.");
             }
         }
     });
 
     sock.ev.on('messages.upsert', async m => {
         const msg = m.messages[0];
-        // Adicionamos uma trava: se a conexão não estiver aberta, ele não tenta reagir
-        if (!msg.message || msg.key.fromMe || sock.ws.readyState !== 1) return;
+        if (!msg.message || msg.key.fromMe) return;
 
         const textoRaw = (
             msg.message.conversation || 
@@ -61,16 +63,21 @@ async function iniciarBot() {
 
         if (temLocal && temPalavraChave) {
             try {
-                // Delay de 2 segundos antes de reagir para parecer humano e evitar erro de conexão
-                setTimeout(async () => {
-                    await sock.sendMessage(msg.key.remoteJid, { react: { text: "👍", key: msg.key } });
-                    console.log(`✅ REAGIDO: ${textoRaw.substring(0, 20)}...`);
-                }, 2000);
+                // Pequeno delay para estabilidade
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                await sock.sendMessage(msg.key.remoteJid, { react: { text: "👍", key: msg.key } });
+                console.log(`✅ REAGIDO: ${textoRaw.substring(0, 20)}...`);
             } catch (err) {
-                console.log("Erro ao reagir:", err.message);
+                // Se der erro ao reagir, ignora para o bot não cair
+                console.log("Aviso: Falha ao reagir, mas o bot continua vivo.");
             }
         }
     });
 }
 
-iniciarBot().catch(err => console.log("Erro no bot:", err));
+// Tratamento de erro global para o processo não morrer
+process.on('uncaughtException', (err) => {
+    console.log('Erro ignorado para manter o bot vivo:', err.message);
+});
+
+iniciarBot().catch(err => console.log("Erro inicial:", err));
