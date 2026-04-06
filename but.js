@@ -3,68 +3,57 @@ const pino = require('pino');
 
 async function iniciarBot() {
     const { version } = await fetchLatestBaileysVersion();
-    const { state, saveCreds } = await useMultiFileAuthState('auth_resultado');
+    // Mudamos o nome da pasta para forçar uma conexão limpa
+    const { state, saveCreds } = await useMultiFileAuthState('sessao_v3');
 
     const sock = makeWASocket({
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
+        // Isso ajuda o WhatsApp a aceitar a conexão da nuvem
         browser: ["Ubuntu", "Chrome", "20.0.04"]
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect } = update;
-
-        // Se a conexão fechar por erro, ele tenta ligar de novo
-        if (connection === 'close') {
-            const motivo = (lastDisconnect.error)?.output?.statusCode;
-            if (motivo !== DisconnectReason.loggedOut) {
-                console.log("🔄 Conexão oscilou, tentando ligar de novo...");
-                iniciarBot();
-            }
-        } 
-
-        // QUANDO A CONEXÃO ESTIVER PRONTA PARA PEDIR O CÓDIGO
-        if (connection === 'open') {
-            console.log('\n🚀 BOT ONLINE E CONECTADO!');
-        }
-    });
-
-    // --- PARTE DO CÓDIGO DE EMPARELHAMENTO MAIS SEGURO ---
     if (!sock.authState.creds.registered) {
-        // COLOQUE SEU NÚMERO ABAIXO (Exemplo: 5561998853299)
+        // COLOQUE SEU NÚMERO AQUI (Ex: 5561998853299)
         const meuNumero = "5561999999999"; 
 
-        // Espera 10 segundos para garantir que o sinal está forte
+        // Espera 15 segundos para o servidor estabilizar antes de pedir o código
         setTimeout(async () => {
             try {
                 const code = await sock.requestPairingCode(meuNumero);
-                console.log(`\n✅ SEU CÓDIGO DE ACESSO NOVO: ${code}\n`);
+                console.log(`\n✅ DIGITE ESTE CÓDIGO NO WHATSAPP: ${code}\n`);
             } catch (err) {
-                console.log("\n❌ Erro ao gerar código. Reiniciando para tentar de novo...");
-                iniciarBot();
+                console.log("Aguardando estabilidade...");
             }
-        }, 10000); 
+        }, 15000);
     }
 
-    // Lógica das mensagens (Joinha automático)
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect } = update;
+        if (connection === 'open') {
+            console.log('\n🚀 CONECTADO COM SUCESSO! O BOT ESTÁ ATIVO.');
+        }
+        if (connection === 'close') {
+            const motivo = (lastDisconnect.error)?.output?.statusCode;
+            if (motivo !== DisconnectReason.loggedOut) iniciarBot();
+        }
+    });
+
     sock.ev.on('messages.upsert', async m => {
         const msg = m.messages[0];
         if (!msg.message || msg.key.fromMe) return;
-        const textoRaw = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
-        const textoLimpo = textoRaw.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const textoRaw = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").toLowerCase();
         const locais = ["aguas claras", "joquei", "smas-spo", "candangolandia", "lucio costa", "guara 1", "smu", "sobradinho", "smas-sofs", "guara 2"];
-        
-        if (locais.some(l => textoLimpo.includes(l)) && (textoLimpo.includes("disponivel") || textoLimpo.includes("frete"))) {
+        if (locais.some(l => textoRaw.includes(l)) && (textoRaw.includes("disponivel") || textoRaw.includes("frete"))) {
             try {
                 await sock.sendMessage(msg.key.remoteJid, { react: { text: "👍", key: msg.key } });
-                console.log(`✅ REAGIDO: ${textoRaw}`);
-            } catch (err) { console.log(`❌ Erro ao reagir: ${err.message}`); }
+            } catch (e) { console.log("Erro na reação"); }
         }
     });
 }
 
-iniciarBot().catch(err => console.log("Erro crítico:", err));
+iniciarBot().catch(err => console.log(err));
