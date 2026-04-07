@@ -1,13 +1,17 @@
 {
-  "name": "bot-frete-nuvem",
+  "name": "bot-frete-painel",
   "version": "1.0.0",
+  "description": "Bot de Fretes com Painel de Controle",
   "main": "but.js",
   "scripts": {
     "start": "node but.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.5.0",
-    "pino": "^8.16.1",
-    "qrcode-terminal": "^0.12.0"
+    "@whiskeysockets/baileys": "latest",
+    "@hapi/boom": "^10.0.1",
+    "express": "^4.18.2",
+    "pino": "^8.15.0",
+    "qrcode-terminal": "^0.12.0",
+    "socket.io": "^4.7.2"
   }
 }
