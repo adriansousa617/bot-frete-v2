@@ -2,13 +2,15 @@
   "name": "bot-frete-v2",
   "version": "1.0.0",
   "main": "but.js",
-  "scripts": { "start": "node but.js" },
+  "scripts": {
+    "start": "node but.js"
+  },
   "dependencies": {
     "@whiskeysockets/baileys": "latest",
     "@hapi/boom": "^10.0.1",
     "express": "^4.18.2",
     "pino": "^8.15.0",
-    "qrcode-terminal": "^0.12.0",
-    "socket.io": "^4.7.2"
+    "socket.io": "^4.7.2",
+    "qrcode-terminal": "^0.12.0"
   }
 }
