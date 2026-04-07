@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, delay } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -12,12 +12,12 @@ const io = new Server(server);
 // --- ESTADO DO APP ---
 let sock;
 let botLigado = true;
-let curtirTudo = false; // Nova função
-let gruposAlvo = []; // Lista de IDs de grupos selecionados
-let listaDeGrupos = {}; // Nome e ID de todos os grupos
-const meuNumero = "55619XXXX-XXXX"; // <--- SEU NÚMERO AQUI
+let curtirTudo = false; 
+let gruposAlvo = []; 
+let listaDeGrupos = {}; 
 
 async function iniciarBot() {
+    // Lendo a pasta principal onde estão seus arquivos de login (.json)
     const { state, saveCreds } = await useMultiFileAuthState('.');
     const { version } = await fetchLatestBaileysVersion();
 
@@ -26,27 +26,34 @@ async function iniciarBot() {
         auth: state,
         logger: pino({ level: 'silent' }),
         browser: ["Ubuntu", "Chrome", "20.0.04"],
-        printQRInTerminal: false
+        printQRInTerminal: false,
+        // Adicionando tempos de espera maiores para evitar quedas no Railway
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 0,
+        keepAliveIntervalMs: 10000
     });
 
-    if (!sock.authState.creds.registered) {
-        await delay(5000);
-        const code = await sock.requestPairingCode(meuNumero);
-        console.log(`\n🔥 NOVO CÓDIGO DE ACESSO: ${code}\n`);
-    }
+    // SÓ PEDE CÓDIGO SE NÃO EXISTIR LOGIN SALVO
+    // Removi a parte que forçava o código toda vez!
 
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
-        if (connection === 'open') console.log('✅ BOT ATIVO!');
+        if (connection === 'open') {
+            console.log('\n✅ [SISTEMA] BOT RECONECTADO COM SUCESSO USANDO O LOGIN EXISTENTE!');
+        }
         if (connection === 'close') {
             const motivo = (lastDisconnect.error instanceof Boom)?.output?.statusCode;
-            if (motivo !== DisconnectReason.loggedOut) iniciarBot();
+            // Se não for logoff manual, ele tenta voltar sozinho
+            if (motivo !== DisconnectReason.loggedOut) {
+                console.log("🔄 Conexão oscilou. Tentando voltar...");
+                iniciarBot();
+            }
         }
     });
 
-    // Monitora mensagens e identifica grupos
+    // --- RESTO DO CÓDIGO (REAEAÇÕES E PAINEL) ---
     sock.ev.on('messages.upsert', async m => {
         const msg = m.messages[0];
         if (!botLigado || !msg.message || msg.key.fromMe) return;
@@ -54,30 +61,33 @@ async function iniciarBot() {
         const jid = msg.key.remoteJid;
         const isGroup = jid.endsWith('@g.us');
         
-        // Atualiza lista de grupos dinamicamente
+        // Se for grupo, identifica o nome para o painel
         if (isGroup && !listaDeGrupos[jid]) {
-            const metadata = await sock.groupMetadata(jid);
-            listaDeGrupos[jid] = metadata.subject;
-            io.emit('atualizar_grupos', listaDeGrupos);
+            try {
+                const metadata = await sock.groupMetadata(jid);
+                listaDeGrupos[jid] = metadata.subject;
+                io.emit('atualizar_grupos', listaDeGrupos);
+            } catch (e) {}
         }
 
-        // Se o grupo não estiver selecionado (e a lista não estiver vazia), ignora
+        // Filtro de Grupos Escolhidos
         if (isGroup && gruposAlvo.length > 0 && !gruposAlvo.includes(jid)) return;
 
-        // --- LÓGICA DE REAÇÃO ---
         const texto = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").toLowerCase();
         const locais = ["aguas claras", "joquei", "smas-spo", "candangolandia", "lucio costa", "guara 1", "smu", "sobradinho", "smas-sofs", "guara 2"];
         const ehFrete = locais.some(l => texto.includes(l)) && (texto.includes("disponivel") || texto.includes("frete"));
 
+        // CURTIR TUDO OU SÓ FRETE
         if (curtirTudo || ehFrete) {
             try {
                 await sock.sendMessage(jid, { react: { text: "👍", key: msg.key } });
-            } catch (e) { console.log("Erro ao curtir"); }
+                console.log(`👍 Reagido em: ${listaDeGrupos[jid] || jid}`);
+            } catch (e) {}
         }
     });
 }
 
-// --- PAINEL WEB ---
+// --- ROTAS DO PAINEL WEB ---
 app.get('/', (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -86,13 +96,14 @@ app.get('/', (req, res) => {
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <title>FreteBot Pro</title>
             <style>
-                body { font-family: sans-serif; background: #121212; color: white; padding: 20px; }
-                .card { background: #1e1e1e; border-radius: 15px; padding: 20px; max-width: 450px; margin: auto; }
-                button { width: 100%; padding: 15px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; margin: 10px 0; }
-                .on { background: #25d366; color: black; } .off { background: #ea4335; color: white; }
+                body { font-family: sans-serif; background: #121212; color: white; padding: 20px; text-align: center; }
+                .card { background: #1e1e1e; border-radius: 15px; padding: 20px; max-width: 450px; margin: auto; box-shadow: 0 10px 20px rgba(0,0,0,0.5); }
+                button { width: 100%; padding: 18px; border-radius: 12px; border: none; font-weight: bold; cursor: pointer; margin: 10px 0; font-size: 16px; transition: 0.3s; }
+                .on { background: #25d366; color: black; } 
+                .off { background: #ea4335; color: white; }
                 .box { background: #2a2a2a; padding: 15px; border-radius: 10px; text-align: left; margin-top: 15px; }
-                .item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #333; }
-                input[type="checkbox"] { transform: scale(1.5); }
+                .item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #333; }
+                input[type="checkbox"] { width: 20px; height: 20px; cursor: pointer; }
             </style>
         </head>
         <body>
@@ -103,8 +114,8 @@ app.get('/', (req, res) => {
                 
                 <div class="box">
                     <strong>📍 Grupos Monitorados</strong>
-                    <p style="font-size: 12px; color: #888;">Se nenhum for marcado, funciona em TODOS.</p>
-                    <div id="lista">Aguardando mensagens dos grupos...</div>
+                    <p style="font-size: 12px; color: #888; margin-bottom: 15px;">Marque os grupos que o bot deve atuar. Se não marcar nenhum, ele atua em todos.</p>
+                    <div id="lista">Aguardando mensagens...</div>
                 </div>
             </div>
 
@@ -119,7 +130,7 @@ app.get('/', (req, res) => {
                     b.className = data.botLigado ? 'on' : 'off';
 
                     const t = document.getElementById('btnTudo');
-                    t.innerText = data.curtirTudo ? 'CURTIR TUDO: ON' : 'CURTIR TUDO: OFF';
+                    t.innerText = data.curtirTudo ? 'MODO: CURTIR TUDO' : 'MODO: SÓ FRETES';
                     t.className = data.curtirTudo ? 'on' : 'off';
                 });
 
@@ -139,7 +150,6 @@ app.get('/', (req, res) => {
 io.on('connection', (socket) => {
     socket.emit('status', { botLigado, curtirTudo });
     socket.emit('atualizar_grupos', listaDeGrupos);
-
     socket.on('toggle_bot', () => { botLigado = !botLigado; io.emit('status', { botLigado, curtirTudo }); });
     socket.on('toggle_tudo', () => { curtirTudo = !curtirTudo; io.emit('status', { botLigado, curtirTudo }); });
     socket.on('toggle_grupo', (id) => {
