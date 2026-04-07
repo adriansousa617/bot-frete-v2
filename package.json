@@ -1,11 +1,8 @@
 {
-  "name": "bot-frete-painel",
+  "name": "bot-frete-v2",
   "version": "1.0.0",
-  "description": "Bot de Fretes com Painel de Controle",
   "main": "but.js",
-  "scripts": {
-    "start": "node but.js"
-  },
+  "scripts": { "start": "node but.js" },
   "dependencies": {
     "@whiskeysockets/baileys": "latest",
     "@hapi/boom": "^10.0.1",
